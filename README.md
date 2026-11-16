@@ -1,5 +1,13 @@
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
+## Supabase setup
+
+1. Copy `.env.example` to `.env.local` and set `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` from the Supabase project API settings. Use the publishable/anon key only; never put a service-role key in a `NEXT_PUBLIC_` variable.
+2. In the Supabase Dashboard, open **SQL Editor**, paste in `supabase/setup.sql`, and run it. This creates the reports and feedback tables, public item-image bucket, and row-level security policies.
+3. Restart the Next.js development server after setting the environment variables.
+
+When Supabase is configured, reports, photos, and feedback are stored in the shared project. Without it, the app keeps using browser-local storage. Report contact email addresses and phone numbers are readable to anyone with access to the public reports table, so reporters are warned before publishing. Email and SMS links open a message draft; automatic delivery still needs a mail or SMS provider integration.
+
 ## Getting Started
 
 First, run the development server:

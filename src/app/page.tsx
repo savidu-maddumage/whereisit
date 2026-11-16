@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { ArrowLeft, ArrowRight, Check, Clock3, ImagePlus, LocateFixed, MapPin, MessageSquareText, PackagePlus, Search, ShieldCheck, X } from "lucide-react";
+import { isSupabaseConfigured, supabase } from "@/lib/supabase";
 
 type LostFoundItem = {
   id: string;
@@ -21,6 +22,13 @@ type LostFoundItem = {
   lat?: number;
   lng?: number;
 };
+
+type DbItem = { id: string; name: string; category: string; location: string; address: string | null; image_url: string | null; date_label: string; status: "Lost" | "Found"; description: string; owner_name: string; email: string; phone: string; lat: number | null; lng: number | null };
+type DbFeedback = { id: string; name: string; message: string; rating: number; created_at: string };
+
+function fromDbItem(row: DbItem): LostFoundItem {
+  return { id: row.id, name: row.name, category: row.category, location: row.location, address: row.address || undefined, image: row.image_url || undefined, date: row.date_label, status: row.status, description: row.description, ownerName: row.owner_name, email: row.email, phone: row.phone, lat: row.lat ?? undefined, lng: row.lng ?? undefined };
+}
 
 const STORAGE_KEY = "whereisit-items-v1";
 const CATEGORIES = ["People", "Vehicle", "Electronics", "Documents", "Pets", "Jewelry", "Bags", "Wallet", "Mobile phone", "Other"];
@@ -52,12 +60,29 @@ export function WhereIsItApp() {
   const [imageData, setImageData] = useState("");
 
   useEffect(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY);
-      if (saved) setItems([...JSON.parse(saved) as LostFoundItem[], ...samples]);
-    } catch { /* Keep sample items available if saved data is unreadable. */ }
-    try { const savedFeedback = localStorage.getItem(FEEDBACK_KEY); if (savedFeedback) setFeedback(JSON.parse(savedFeedback)); } catch { /* Feedback is optional. */ }
-    setReady(true);
+    let active = true;
+    async function loadCommunity() {
+      let localItems: LostFoundItem[] = [];
+      let localFeedback: { name: string; message: string; rating: string; date: string }[] = [];
+      try { const saved = localStorage.getItem(STORAGE_KEY); if (saved) localItems = JSON.parse(saved); } catch { /* Keep sample items available if saved data is unreadable. */ }
+      try { const saved = localStorage.getItem(FEEDBACK_KEY); if (saved) localFeedback = JSON.parse(saved); } catch { /* Feedback is optional. */ }
+      if (active) { setItems([...localItems, ...samples]); setFeedback(localFeedback); }
+      if (supabase) {
+        const [{ data: reports, error: reportsError }, { data: notes }] = await Promise.all([
+          supabase.from("items").select("*").order("created_at", { ascending: false }),
+          supabase.from("feedback").select("*").order("created_at", { ascending: false }).limit(30),
+        ]);
+        if (active && reports && !reportsError) {
+          const combined = [...reports.map((row) => fromDbItem(row as DbItem)), ...localItems, ...samples];
+          setItems(combined.filter((item, index) => combined.findIndex((candidate) => candidate.id === item.id) === index));
+        }
+        if (active && notes) setFeedback((notes as DbFeedback[]).map((note) => ({ name: note.name, message: note.message, rating: String(note.rating), date: new Date(note.created_at).toLocaleDateString() })));
+        if (active && reportsError) setNotice(`Could not load shared reports: ${reportsError.message}`);
+      }
+      if (active) setReady(true);
+    }
+    void loadCommunity();
+    return () => { active = false; };
   }, []);
 
   const visibleItems = useMemo(() => items.filter((item) => {
@@ -67,16 +92,35 @@ export function WhereIsItApp() {
     return matchesFilter && matchesCategory && (!term || `${item.name} ${item.category} ${item.location} ${item.address || ""} ${item.description}`.toLowerCase().includes(term));
   }), [items, filter, categoryFilter, search]);
 
-  function saveItem(event: React.FormEvent<HTMLFormElement>) {
+  async function saveItem(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const data = new FormData(event.currentTarget);
     const item: LostFoundItem = {
       id: crypto.randomUUID(), name: String(data.get("name")).trim(), category: String(data.get("category")),
-      location: String(data.get("location")).trim(), address: String(data.get("address")).trim(), image: imageData || undefined, date: new Date().toLocaleDateString(), status: reportStatus!,
+      location: String(data.get("location")).trim(), address: String(data.get("address")).trim() || undefined, image: imageData || undefined, date: new Date().toLocaleDateString(), status: reportStatus!,
       description: String(data.get("description")).trim(), ownerName: String(data.get("ownerName")).trim(),
       email: String(data.get("email")).trim(), phone: String(data.get("phone")).trim(),
       lat: data.get("lat") ? Number(data.get("lat")) : undefined, lng: data.get("lng") ? Number(data.get("lng")) : undefined,
     };
+    if (supabase) {
+      try {
+        let imageUrl: string | null = null;
+        if (imageData) {
+          const imageBlob = await (await fetch(imageData)).blob();
+          const { error: uploadError } = await supabase.storage.from("item-images").upload(`${item.id}.jpg`, imageBlob, { contentType: "image/jpeg", upsert: true });
+          if (uploadError) throw uploadError;
+          imageUrl = supabase.storage.from("item-images").getPublicUrl(`${item.id}.jpg`).data.publicUrl;
+        }
+        const { data: row, error } = await supabase.from("items").insert({ id: item.id, name: item.name, category: item.category, location: item.location, address: item.address || null, image_url: imageUrl, date_label: item.date, status: item.status, description: item.description, owner_name: item.ownerName, email: item.email, phone: item.phone, lat: item.lat ?? null, lng: item.lng ?? null }).select("*").single();
+        if (error) throw error;
+        setItems((current) => [fromDbItem(row as DbItem), ...current.filter((entry) => entry.id !== item.id)]);
+        setImageData(""); setReportStatus(null); setNotice("Your report and photo are now shared with the community.");
+        return;
+      } catch (error) {
+        setNotice(`Supabase could not save this report. Check the setup and try again. ${error instanceof Error ? error.message : ""}`);
+        return;
+      }
+    }
     const next = [item, ...items];
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(next.filter((entry) => !entry.id.startsWith("sample-"))));
@@ -100,11 +144,18 @@ export function WhereIsItApp() {
     photo.src = original;
   }
 
-  function saveFeedback(event: React.FormEvent<HTMLFormElement>) {
+  async function saveFeedback(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const data = new FormData(event.currentTarget);
-    const next = [{ name: String(data.get("feedbackName")).trim() || "Community member", message: String(data.get("feedbackMessage")).trim(), rating: String(data.get("rating")), date: new Date().toLocaleDateString() }, ...feedback].slice(0, 30);
-    setFeedback(next); localStorage.setItem(FEEDBACK_KEY, JSON.stringify(next)); event.currentTarget.reset(); setNotice("Thank you. Your feedback has been saved on this device.");
+    const form = event.currentTarget;
+    const data = new FormData(form);
+    const entry = { name: String(data.get("feedbackName")).trim() || "Community member", message: String(data.get("feedbackMessage")).trim(), rating: String(data.get("rating")), date: new Date().toLocaleDateString() };
+    if (supabase) {
+      const { error } = await supabase.from("feedback").insert({ name: entry.name, message: entry.message, rating: Number(entry.rating) });
+      if (error) { setNotice(`Could not submit feedback to Supabase. ${error.message}`); return; }
+      const next = [entry, ...feedback].slice(0, 30); setFeedback(next); form.reset(); setNotice("Thank you. Your feedback was shared with the community."); return;
+    }
+    const next = [entry, ...feedback].slice(0, 30);
+    setFeedback(next); localStorage.setItem(FEEDBACK_KEY, JSON.stringify(next)); form.reset(); setNotice("Thank you. Your feedback has been saved on this device.");
   }
 
   function startReport(status: "Lost" | "Found") { setImageData(""); setReportStatus(status); }
@@ -140,6 +191,7 @@ export function WhereIsItApp() {
           <button onClick={() => startReport("Lost")} className="rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-bold text-white shadow-lg shadow-indigo-600/20 hover:bg-indigo-700">Report an item</button>
         </div>
       </nav>
+      {!isSupabaseConfigured && <div className="bg-amber-50 px-5 py-2.5 text-center text-xs font-semibold text-amber-800">Supabase isn’t connected yet. Reports and feedback currently stay in this browser.</div>}
 
       {!isBrowse && <section className="relative overflow-hidden bg-white">
         <div className="pointer-events-none absolute -left-32 -top-32 h-96 w-96 rounded-full bg-indigo-200/40 blur-3xl"/><div className="pointer-events-none absolute -right-28 top-20 h-96 w-96 rounded-full bg-violet-200/40 blur-3xl"/>
@@ -158,14 +210,14 @@ export function WhereIsItApp() {
         {!ready ? <div className="rounded-2xl bg-white p-10 text-center text-slate-500">Loading community reports…</div> : visibleItems.length ? <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">{visibleItems.map((item) => <article key={item.id} onClick={() => router.push(`/items/${encodeURIComponent(item.id)}`)} onKeyDown={(e) => e.key === "Enter" && router.push(`/items/${encodeURIComponent(item.id)}`)} role="link" tabIndex={0} className="group cursor-pointer overflow-hidden rounded-2xl border border-slate-200 bg-white transition hover:-translate-y-1 hover:shadow-xl hover:shadow-slate-200/70"><div className="relative flex h-48 items-center justify-center overflow-hidden bg-gradient-to-br from-indigo-50 via-white to-violet-100">{item.image ? <img src={item.image} alt={item.name} className="h-full w-full object-cover"/> : <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-white text-indigo-600 shadow-sm"><MapPin size={26}/></div>}<span className={`absolute left-4 top-4 rounded-full px-3 py-1 text-xs font-black ${item.status === "Lost" ? "bg-amber-100 text-amber-700" : "bg-emerald-100 text-emerald-700"}`}>{item.status}</span><span className="absolute bottom-3 right-4 inline-flex items-center gap-1 rounded-full bg-white/90 px-3 py-1 text-xs font-bold text-indigo-600">View details & map <ArrowRight size={13}/></span></div><div className="p-5"><p className="text-xs font-bold uppercase tracking-wide text-slate-400">{item.category}</p><h3 className="mt-1 text-lg font-black group-hover:text-indigo-600">{item.name}</h3><p className="mt-2 line-clamp-2 min-h-10 text-sm leading-5 text-slate-500">{item.description}</p><div className="mt-4 flex items-center justify-between gap-3 border-t border-slate-100 pt-4 text-xs text-slate-500"><span className="flex min-w-0 items-center gap-1.5 truncate"><MapPin size={14} className="shrink-0"/>{item.address || item.location}</span><span className="flex shrink-0 items-center gap-1"><Clock3 size={13}/>{item.date}</span></div>{item.status === "Lost" && <button onClick={(e) => { e.stopPropagation(); setFoundItem(item); }} className="mt-4 w-full rounded-xl bg-indigo-50 py-2.5 text-sm font-bold text-indigo-700 hover:bg-indigo-100">I found this item</button>}</div></article>)}</div> : <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-12 text-center"><p className="font-bold">No items match that search.</p><p className="mt-1 text-sm text-slate-500">Try another search or remove the filter.</p></div>}
       </section>
 
-      <section id="feedback" className="border-y border-slate-200 bg-white py-16"><div className="mx-auto grid max-w-7xl gap-10 px-5 md:grid-cols-[.85fr_1.15fr] md:px-8"><div><p className="mb-2 text-xs font-black tracking-[.16em] text-indigo-600">YOUR VOICE MATTERS</p><h2 className="text-3xl font-black">Help us improve</h2><p className="mt-3 max-w-md text-slate-500">Share a suggestion or tell us how your lost-and-found experience went.</p><div className="mt-6 flex items-center gap-2 text-sm font-semibold text-slate-500"><MessageSquareText size={18} className="text-indigo-500"/> Feedback is saved on this device.</div></div><div><form onSubmit={saveFeedback} className="grid gap-3 sm:grid-cols-2"><input name="feedbackName" maxLength={80} placeholder="Your name (optional)" className={inputClass}/><select name="rating" className={inputClass}><option value="5">Excellent</option><option value="4">Good</option><option value="3">Okay</option><option value="2">Needs work</option><option value="1">Poor</option></select><textarea name="feedbackMessage" required maxLength={600} rows={4} placeholder="What would you like us to know?" className={`${inputClass} sm:col-span-2`}/><button className="rounded-xl bg-indigo-600 px-5 py-3 text-sm font-bold text-white hover:bg-indigo-700 sm:col-span-2 sm:justify-self-end">Send feedback</button></form>{feedback.length > 0 && <div className="mt-6 space-y-3">{feedback.slice(0, 3).map((entry, index) => <div key={`${entry.date}-${index}`} className="rounded-xl bg-slate-50 p-4"><div className="flex justify-between gap-3 text-sm"><strong>{entry.name}</strong><span className="text-amber-500">{"★".repeat(Number(entry.rating))}</span></div><p className="mt-1 text-sm text-slate-600">{entry.message}</p></div>)}</div>}</div></div></section>
+      <section id="feedback" className="border-y border-slate-200 bg-white py-16"><div className="mx-auto grid max-w-7xl gap-10 px-5 md:grid-cols-[.85fr_1.15fr] md:px-8"><div><p className="mb-2 text-xs font-black tracking-[.16em] text-indigo-600">YOUR VOICE MATTERS</p><h2 className="text-3xl font-black">Help us improve</h2><p className="mt-3 max-w-md text-slate-500">Share a suggestion or tell us how your lost-and-found experience went.</p><div className="mt-6 flex items-center gap-2 text-sm font-semibold text-slate-500"><MessageSquareText size={18} className="text-indigo-500"/> {isSupabaseConfigured ? "Feedback is shared with the community." : "Feedback is saved on this device."}</div></div><div><form onSubmit={saveFeedback} className="grid gap-3 sm:grid-cols-2"><input name="feedbackName" maxLength={80} placeholder="Your name (optional)" className={inputClass}/><select name="rating" className={inputClass}><option value="5">Excellent</option><option value="4">Good</option><option value="3">Okay</option><option value="2">Needs work</option><option value="1">Poor</option></select><textarea name="feedbackMessage" required maxLength={600} rows={4} placeholder="What would you like us to know?" className={`${inputClass} sm:col-span-2`}/><button className="rounded-xl bg-indigo-600 px-5 py-3 text-sm font-bold text-white hover:bg-indigo-700 sm:col-span-2 sm:justify-self-end">Send feedback</button></form>{feedback.length > 0 && <div className="mt-6 space-y-3">{feedback.slice(0, 3).map((entry, index) => <div key={`${entry.date}-${index}`} className="rounded-xl bg-slate-50 p-4"><div className="flex justify-between gap-3 text-sm"><strong>{entry.name}</strong><span className="text-amber-500">{"★".repeat(Number(entry.rating))}</span></div><p className="mt-1 text-sm text-slate-600">{entry.message}</p></div>)}</div>}</div></div></section>
 
       {!isBrowse && <section id="how" className="border-y border-slate-200 bg-white py-16"><div className="mx-auto max-w-7xl px-5 md:px-8"><div className="mx-auto mb-10 max-w-xl text-center"><p className="mb-2 text-xs font-black tracking-[.16em] text-indigo-600">SIMPLE PROCESS</p><h2 className="text-3xl font-black">How WhereIsIt works</h2><p className="mt-3 text-slate-500">Three simple steps to help belongings find their way home.</p></div><div className="grid gap-8 md:grid-cols-3">{[{n:"01",title:"Report an item",body:"Add the item details and where it was lost or found."},{n:"02",title:"Browse reports",body:"Search the community reports and open item locations in Maps."},{n:"03",title:"Reconnect",body:"Contact the owner safely when you find a matching item."}].map((s) => <div key={s.n} className="text-center"><div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-indigo-50 font-black text-indigo-600">{s.n}</div><h3 className="font-black">{s.title}</h3><p className="mx-auto mt-2 max-w-xs text-sm leading-6 text-slate-500">{s.body}</p></div>)}</div></div></section>}
       <footer className="bg-slate-950 py-8 text-white"><div className="mx-auto flex max-w-7xl flex-col justify-between gap-3 px-5 sm:flex-row sm:items-center md:px-8"><div><strong className="text-lg">WhereIsIt<span className="text-indigo-400">.</span></strong><p className="mt-1 text-sm text-slate-400">Helping lost things find their way home.</p></div><p className="text-xs text-slate-500">© 2026 WhereIsIt</p></div></footer>
 
       {notice && <div role="status" className="fixed bottom-5 left-1/2 z-50 flex max-w-[calc(100%-2rem)] -translate-x-1/2 items-center gap-3 rounded-xl bg-slate-900 px-4 py-3 text-sm font-medium text-white shadow-xl"><Check size={17} className="shrink-0 text-emerald-400"/>{notice}<button aria-label="Dismiss" onClick={() => setNotice("")}><X size={16}/></button></div>}
 
-      {reportStatus && <div className="fixed inset-0 z-40 flex items-center justify-center overflow-y-auto bg-slate-950/50 p-4 backdrop-blur-sm"><div className="my-auto w-full max-w-xl rounded-3xl bg-white p-6 shadow-2xl sm:p-8"><div className="mb-6 flex items-start justify-between"><div><p className="text-xs font-black tracking-[.14em] text-indigo-600">COMMUNITY REPORT</p><h2 className="mt-1 text-2xl font-black">Report {reportStatus.toLowerCase()} item</h2><p className="mt-1 text-sm text-slate-500">Add a photo and location details to help people recognize it.</p></div><button aria-label="Close" onClick={() => { setImageData(""); setReportStatus(null); }} className="rounded-full bg-slate-100 p-2 hover:bg-slate-200"><X size={18}/></button></div><form onSubmit={saveItem} className="grid gap-4 sm:grid-cols-2"><label className="text-sm font-bold">Item name<input name="name" required maxLength={80} placeholder="e.g. Blue backpack" className={inputClass}/></label><label className="text-sm font-bold">Category<select name="category" className={inputClass}>{CATEGORIES.map((category) => <option key={category}>{category}</option>)}</select></label><div className="sm:col-span-2"><label className="flex cursor-pointer items-center justify-center gap-2 rounded-xl border border-dashed border-indigo-300 bg-indigo-50/50 px-4 py-4 text-sm font-bold text-indigo-700 hover:bg-indigo-50"><ImagePlus size={18}/> {imageData ? "Choose a different photo" : "Upload an item photo (optional)"}<input type="file" accept="image/*" className="sr-only" onChange={(e) => { void prepareImage(e.target.files?.[0]); }}/></label>{imageData && <img src={imageData} alt="Preview of uploaded item" className="mt-3 h-40 w-full rounded-xl object-cover"/>}<p className="mt-1 text-xs text-slate-400">Image files up to 12 MB. The saved copy is resized for storage.</p></div><label className="text-sm font-bold sm:col-span-2">City or area<input name="location" required maxLength={160} placeholder="e.g. Colombo, Sri Lanka" className={inputClass}/><input name="lat" type="hidden"/><input name="lng" type="hidden"/></label><label className="text-sm font-bold sm:col-span-2">Street address or landmark<input name="address" maxLength={240} placeholder="Optional — add a nearby address or landmark" className={inputClass}/></label><div className="sm:col-span-2"><button type="button" onClick={(e) => useCurrentLocation(e.currentTarget.form!)} className="inline-flex items-center gap-2 text-sm font-bold text-indigo-600 hover:text-indigo-800"><LocateFixed size={16}/> Use my current location</button><p className="mt-1 text-xs text-slate-400">Your browser will ask permission. Coordinates will be added to the address.</p></div><label className="text-sm font-bold sm:col-span-2">Description<textarea name="description" required maxLength={500} rows={3} placeholder="Color, identifying details, and any other helpful information" className={inputClass}/></label><label className="text-sm font-bold">Your name<input name="ownerName" required maxLength={80} className={inputClass}/></label><label className="text-sm font-bold">Contact email<input name="email" type="email" required className={inputClass}/></label><label className="text-sm font-bold sm:col-span-2">Mobile number<input name="phone" type="tel" required placeholder="Include country code, e.g. +94…" className={inputClass}/></label><div className="flex gap-3 pt-2 sm:col-span-2"><button type="button" onClick={() => { setImageData(""); setReportStatus(null); }} className="flex-1 rounded-xl border border-slate-200 py-3 font-bold text-slate-600 hover:bg-slate-50">Cancel</button><button className="flex-1 rounded-xl bg-indigo-600 py-3 font-bold text-white hover:bg-indigo-700">Publish report</button></div></form></div></div>}
+      {reportStatus && <div className="fixed inset-0 z-40 flex items-center justify-center overflow-y-auto bg-slate-950/50 p-4 backdrop-blur-sm"><div className="my-auto w-full max-w-xl rounded-3xl bg-white p-6 shadow-2xl sm:p-8"><div className="mb-6 flex items-start justify-between"><div><p className="text-xs font-black tracking-[.14em] text-indigo-600">COMMUNITY REPORT</p><h2 className="mt-1 text-2xl font-black">Report {reportStatus.toLowerCase()} item</h2><p className="mt-1 text-sm text-slate-500">Add a photo and location details to help people recognize it.</p></div><button aria-label="Close" onClick={() => { setImageData(""); setReportStatus(null); }} className="rounded-full bg-slate-100 p-2 hover:bg-slate-200"><X size={18}/></button></div><form onSubmit={saveItem} className="grid gap-4 sm:grid-cols-2"><label className="text-sm font-bold">Item name<input name="name" required maxLength={80} placeholder="e.g. Blue backpack" className={inputClass}/></label><label className="text-sm font-bold">Category<select name="category" className={inputClass}>{CATEGORIES.map((category) => <option key={category}>{category}</option>)}</select></label><div className="sm:col-span-2"><label className="flex cursor-pointer items-center justify-center gap-2 rounded-xl border border-dashed border-indigo-300 bg-indigo-50/50 px-4 py-4 text-sm font-bold text-indigo-700 hover:bg-indigo-50"><ImagePlus size={18}/> {imageData ? "Choose a different photo" : "Upload an item photo (optional)"}<input type="file" accept="image/*" className="sr-only" onChange={(e) => { void prepareImage(e.target.files?.[0]); }}/></label>{imageData && <img src={imageData} alt="Preview of uploaded item" className="mt-3 h-40 w-full rounded-xl object-cover"/>}<p className="mt-1 text-xs text-slate-400">Image files up to 12 MB. The saved copy is resized for storage.</p></div><label className="text-sm font-bold sm:col-span-2">City or area<input name="location" required maxLength={160} placeholder="e.g. Colombo, Sri Lanka" className={inputClass}/><input name="lat" type="hidden"/><input name="lng" type="hidden"/></label><label className="text-sm font-bold sm:col-span-2">Street address or landmark<input name="address" maxLength={240} placeholder="Optional — add a nearby address or landmark" className={inputClass}/></label><div className="sm:col-span-2"><button type="button" onClick={(e) => useCurrentLocation(e.currentTarget.form!)} className="inline-flex items-center gap-2 text-sm font-bold text-indigo-600 hover:text-indigo-800"><LocateFixed size={16}/> Use my current location</button><p className="mt-1 text-xs text-slate-400">Your browser will ask permission. Coordinates will be added to the address.</p></div><label className="text-sm font-bold sm:col-span-2">Description<textarea name="description" required maxLength={500} rows={3} placeholder="Color, identifying details, and any other helpful information" className={inputClass}/></label><label className="text-sm font-bold">Your name<input name="ownerName" required maxLength={80} className={inputClass}/></label><label className="text-sm font-bold">Contact email<input name="email" type="email" required className={inputClass}/></label><label className="text-sm font-bold sm:col-span-2">Mobile number<input name="phone" type="tel" required placeholder="Include country code, e.g. +94…" className={inputClass}/></label><p className="text-xs leading-5 text-slate-500 sm:col-span-2">Contact details are visible to people browsing this public report so they can reach you.</p><div className="flex gap-3 pt-2 sm:col-span-2"><button type="button" onClick={() => { setImageData(""); setReportStatus(null); }} className="flex-1 rounded-xl border border-slate-200 py-3 font-bold text-slate-600 hover:bg-slate-50">Cancel</button><button className="flex-1 rounded-xl bg-indigo-600 py-3 font-bold text-white hover:bg-indigo-700">Publish report</button></div></form></div></div>}
 
       {foundItem && <FoundDialog item={foundItem} onClose={() => setFoundItem(null)} onNotify={notifyOwner} onNotice={setNotice}/>}
     </main>
