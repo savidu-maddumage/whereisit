@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { ArrowLeft, LogOut, RefreshCw, ShieldCheck, Trash2 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import ThemeToggle from "@/components/theme-toggle";
+import FeedbackSection from "./feedback-section";
 
 type Item = { id: string; name: string; category: string; location: string; status: "Lost" | "Found"; date_label: string; created_at: string };
 type Access = "checking" | "signed-out" | "not-admin" | "admin";
@@ -89,7 +90,7 @@ export default function AdminPage() {
   }
 
   return <main className="min-h-screen bg-[#f7f8fc] text-slate-900">
-    <nav className="border-b border-slate-200 bg-white"><div className="mx-auto flex max-w-6xl items-center justify-between px-5 py-4"><Link href="/" className="text-2xl font-black tracking-tight">WhereIsIt<span className="text-indigo-600">.</span></Link><div className="flex items-center gap-4"><Link href="/browse" className="text-sm font-bold text-indigo-600">Browse public site</Link><ThemeToggle/></div></div></nav>
+    <nav className="border-b border-slate-200 bg-white"><div className="mx-auto flex max-w-6xl items-center justify-between px-5 py-4"><Link href="/" className="text-2xl font-black tracking-tight">WhereIsIt<span className="text-indigo-600">.</span></Link><div className="flex items-center gap-4"><Link href="/browse" className="text-sm font-bold text-indigo-600">Browse public site</Link><ThemeToggle scope="admin"/></div></div></nav>
     <div className="mx-auto max-w-6xl px-5 py-10 md:py-14">
       <div className="mb-8 flex items-center gap-3"><div className="rounded-2xl bg-indigo-100 p-3 text-indigo-700"><ShieldCheck size={24}/></div><div><p className="text-xs font-black uppercase tracking-widest text-indigo-600">Admin panel</p><h1 className="text-3xl font-black">Manage reports</h1></div></div>
       {access === "checking" ? <p className="rounded-2xl bg-white p-8 text-slate-500">Checking admin access…</p> : null}
@@ -98,6 +99,7 @@ export default function AdminPage() {
       {access === "admin" && <><div className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-indigo-100 bg-indigo-50 p-4 text-sm text-indigo-900"><span>Signed in as an administrator. {items.length} shared reports.</span><div className="flex gap-2"><button onClick={() => void refresh()} disabled={busy} className="inline-flex items-center gap-2 rounded-xl bg-white px-3 py-2 font-bold"><RefreshCw size={15}/> Refresh</button><button onClick={() => void supabase?.auth.signOut()} className="inline-flex items-center gap-2 rounded-xl bg-white px-3 py-2 font-bold"><LogOut size={15}/> Sign out</button></div></div>
       {message && <p role="status" className="mb-4 rounded-xl bg-rose-50 p-4 text-sm text-rose-800">{message}</p>}
       {items.length === 0 ? <div className="rounded-2xl border border-slate-200 bg-white p-10 text-center text-slate-500">{busy ? "Loading reports…" : "No shared reports yet."}</div> : <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm"><div className="overflow-x-auto"><table className="w-full min-w-[680px] text-left text-sm"><thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500"><tr><th className="px-5 py-4">Item</th><th className="px-5 py-4">Location</th><th className="px-5 py-4">Status</th><th className="px-5 py-4">Actions</th></tr></thead><tbody className="divide-y divide-slate-100">{items.map((item) => <tr key={item.id}><td className="px-5 py-4"><p className="font-bold">{item.name}</p><p className="mt-1 text-xs text-slate-500">{item.category} · {item.date_label}</p></td><td className="px-5 py-4 text-slate-600">{item.location}</td><td className="px-5 py-4"><span className={`rounded-full px-3 py-1 text-xs font-black ${item.status === "Lost" ? "bg-amber-100 text-amber-700" : "bg-emerald-100 text-emerald-700"}`}>{item.status}</span></td><td className="px-5 py-4"><div className="flex gap-2"><button onClick={() => void changeStatus(item)} className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-bold hover:bg-slate-50">Mark {item.status === "Lost" ? "found" : "lost"}</button><button aria-label={`Delete ${item.name}`} onClick={() => void removeItem(item)} className="rounded-lg border border-rose-200 p-2 text-rose-600 hover:bg-rose-50"><Trash2 size={16}/></button></div></td></tr>)}</tbody></table></div></div>}</>}
+      {access === "admin" && <FeedbackSection/>}
       {message && access !== "admin" && <p role="status" className="mt-4 max-w-md rounded-xl bg-rose-50 p-4 text-sm text-rose-800">{message}</p>}
       <Link href="/" className="mt-8 inline-flex items-center gap-2 text-sm font-bold text-slate-500 hover:text-indigo-600"><ArrowLeft size={16}/> Back to site</Link>
     </div>

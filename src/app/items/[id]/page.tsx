@@ -52,7 +52,7 @@ export default function ItemPage() {
   const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(destination)}`;
 
   return <main className="min-h-screen bg-[#f7f8fc] text-slate-900">
-    <nav className="border-b border-slate-200 bg-white"><div className="mx-auto flex max-w-6xl items-center justify-between px-5 py-4 md:px-8"><Link href="/" className="text-2xl font-black tracking-tight">WhereIsIt<span className="text-indigo-600">.</span></Link><div className="flex items-center gap-4"><Link href="/browse" className="text-sm font-bold text-indigo-600">Browse items</Link><ThemeToggle/></div></div></nav>
+    <nav className="border-b border-slate-200 bg-white"><div className="mx-auto flex max-w-6xl items-center justify-between px-5 py-4 md:px-8"><Link href="/" className="text-2xl font-black tracking-tight">WhereIsIt<span className="text-indigo-600">.</span></Link><div className="flex items-center gap-4"><Link href="/browse" className="text-sm font-bold text-indigo-600">Browse items</Link><ThemeToggle scope="public"/></div></div></nav>
     <div className="mx-auto max-w-6xl px-5 py-8 md:px-8 md:py-12">
       <Link href="/browse" className="mb-6 inline-flex items-center gap-2 text-sm font-bold text-slate-500 hover:text-indigo-600"><ArrowLeft size={16}/> Back to items</Link>
       <div className="grid gap-8 lg:grid-cols-[.8fr_1.2fr]">

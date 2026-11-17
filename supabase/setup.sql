@@ -52,12 +52,16 @@ create table if not exists public.feedback (
 
 alter table public.feedback enable row level security;
 grant select, insert on public.feedback to anon, authenticated;
+grant delete on public.feedback to authenticated;
 drop policy if exists "Anyone can read feedback" on public.feedback;
 create policy "Anyone can read feedback" on public.feedback for select to anon, authenticated using (true);
 drop policy if exists "Anyone can submit feedback" on public.feedback;
 create policy "Anyone can submit feedback" on public.feedback for insert to anon, authenticated with check (
   char_length(name) between 1 and 80 and char_length(message) between 1 and 600
 );
+drop policy if exists "Admins can delete feedback" on public.feedback;
+create policy "Admins can delete feedback" on public.feedback for delete to authenticated
+using ((auth.jwt() -> 'app_metadata' ->> 'role') = 'admin');
 
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 values ('item-images', 'item-images', true, 5242880, array['image/jpeg', 'image/png', 'image/webp'])

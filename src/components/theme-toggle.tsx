@@ -3,25 +3,26 @@
 import { useEffect, useState } from "react";
 import { Moon, Sun } from "lucide-react";
 
-const THEME_KEY = "whereisit-theme-v1";
+type ThemeScope = "public" | "admin";
 
-export default function ThemeToggle() {
+export default function ThemeToggle({ scope }: { scope: ThemeScope }) {
   const [dark, setDark] = useState(false);
+  const themeKey = `whereisit-theme-${scope}-v1`;
 
   useEffect(() => {
     let useDark = false;
     try {
-      const saved = localStorage.getItem(THEME_KEY);
+      const saved = localStorage.getItem(themeKey);
       useDark = saved ? saved === "dark" : window.matchMedia("(prefers-color-scheme: dark)").matches;
     } catch { /* Use the current light theme if browser storage is unavailable. */ }
     document.documentElement.classList.toggle("dark", useDark);
     setDark(useDark);
-  }, []);
+  }, [themeKey]);
 
   function toggleTheme() {
     const nextDark = !document.documentElement.classList.contains("dark");
     document.documentElement.classList.toggle("dark", nextDark);
-    try { localStorage.setItem(THEME_KEY, nextDark ? "dark" : "light"); } catch { /* Theme still applies for this visit. */ }
+    try { localStorage.setItem(themeKey, nextDark ? "dark" : "light"); } catch { /* Theme still applies for this visit. */ }
     setDark(nextDark);
   }
 
