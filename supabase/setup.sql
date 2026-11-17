@@ -19,6 +19,8 @@ create table if not exists public.items (
   created_at timestamptz not null default now()
 );
 
+alter table public.items add column if not exists found_reported_at timestamptz;
+
 alter table public.items enable row level security;
 grant select, insert on public.items to anon, authenticated;
 grant update, delete on public.items to authenticated;
@@ -41,6 +43,22 @@ with check ((auth.jwt() -> 'app_metadata' ->> 'role') = 'admin');
 drop policy if exists "Admins can delete reports" on public.items;
 create policy "Admins can delete reports" on public.items for delete to authenticated
 using ((auth.jwt() -> 'app_metadata' ->> 'role') = 'admin');
+
+create or replace function public.report_item_found(p_item_id uuid)
+returns boolean
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  update public.items
+  set found_reported_at = coalesce(found_reported_at, pg_catalog.now())
+  where id = p_item_id and status = 'Lost';
+  return found;
+end;
+$$;
+revoke all on function public.report_item_found(uuid) from public;
+grant execute on function public.report_item_found(uuid) to anon, authenticated;
 
 create table if not exists public.feedback (
   id uuid primary key default gen_random_uuid(),

@@ -10,7 +10,7 @@ When Supabase is configured, reports, photos, and feedback are stored in the sha
 
 ## Admin panel
 
-Open `/admin` (for local development, `http://localhost:3000/admin`) for a separate admin sign-in and shared-report manager. The panel supports marking a report found/lost, permanently deleting a report, and reviewing or deleting community feedback. It requires Supabase; browser-local reports and sample cards are not managed there.
+Open `/admin` (for local development, `http://localhost:3000/admin`) for a separate admin sign-in and shared-report manager. The panel supports reviewing visitor found reports, marking a report found/lost, permanently deleting a report, and reviewing or deleting community feedback. It requires Supabase; browser-local reports and sample cards are not managed there.
 
 To enable it, create an account in Supabase Dashboard under **Authentication > Users**, then set that user's **app metadata** to `{"role":"admin"}`. Use app metadata, not user metadata, because users must not be able to grant themselves admin access. Sign in at `/admin` with that account. Run the updated `supabase/setup.sql` in the SQL Editor to add the admin-only update and delete policies. The account must sign in again after changing its metadata so its session receives the admin role.
 
