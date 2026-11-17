@@ -5,6 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { ArrowLeft, ArrowRight, Check, Clock3, ImagePlus, LocateFixed, MapPin, MessageSquareText, PackagePlus, Search, ShieldCheck, X } from "lucide-react";
 import { isSupabaseConfigured, supabase } from "@/lib/supabase";
+import ThemeToggle from "@/components/theme-toggle";
 
 type LostFoundItem = {
   id: string;
@@ -73,7 +74,9 @@ export function WhereIsItApp() {
           supabase.from("feedback").select("*").order("created_at", { ascending: false }).limit(30),
         ]);
         if (active && reports && !reportsError) {
-          const combined = [...reports.map((row) => fromDbItem(row as DbItem)), ...localItems, ...samples];
+          const sharedItems = reports.map((row) => fromDbItem(row as DbItem));
+          const visibleSamples = samples.filter((sample) => !sharedItems.some((item) => item.name === sample.name && item.status === sample.status));
+          const combined = [...sharedItems, ...localItems, ...visibleSamples];
           setItems(combined.filter((item, index) => combined.findIndex((candidate) => candidate.id === item.id) === index));
         }
         if (active && notes) setFeedback((notes as DbFeedback[]).map((note) => ({ name: note.name, message: note.message, rating: String(note.rating), date: new Date(note.created_at).toLocaleDateString() })));
@@ -188,7 +191,7 @@ export function WhereIsItApp() {
         <div className="mx-auto flex max-w-7xl items-center justify-between px-5 py-4 md:px-8">
           <Link href="/" className="text-2xl font-black tracking-tight">WhereIsIt<span className="text-indigo-600">.</span></Link>
           <div className="hidden items-center gap-8 text-sm font-semibold text-slate-500 md:flex"><Link href="/browse" className="hover:text-indigo-600">Browse items</Link><a href="#how" className="hover:text-indigo-600">How it works</a><a href="#feedback" className="hover:text-indigo-600">Feedback</a></div>
-          <button onClick={() => startReport("Lost")} className="rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-bold text-white shadow-lg shadow-indigo-600/20 hover:bg-indigo-700">Report an item</button>
+          <div className="flex items-center gap-2"><ThemeToggle/><button onClick={() => startReport("Lost")} className="rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-bold text-white shadow-lg shadow-indigo-600/20 hover:bg-indigo-700">Report an item</button></div>
         </div>
       </nav>
       {!isSupabaseConfigured && <div className="bg-amber-50 px-5 py-2.5 text-center text-xs font-semibold text-amber-800">Supabase isn’t connected yet. Reports and feedback currently stay in this browser.</div>}

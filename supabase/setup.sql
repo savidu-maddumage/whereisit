@@ -21,6 +21,7 @@ create table if not exists public.items (
 
 alter table public.items enable row level security;
 grant select, insert on public.items to anon, authenticated;
+grant update, delete on public.items to authenticated;
 
 drop policy if exists "Anyone can browse reports" on public.items;
 create policy "Anyone can browse reports" on public.items for select to anon, authenticated using (true);
@@ -32,6 +33,14 @@ create policy "Anyone can publish a report" on public.items for insert to anon, 
   char_length(email) between 3 and 254 and
   char_length(phone) between 3 and 40
 );
+
+drop policy if exists "Admins can update reports" on public.items;
+create policy "Admins can update reports" on public.items for update to authenticated
+using ((auth.jwt() -> 'app_metadata' ->> 'role') = 'admin')
+with check ((auth.jwt() -> 'app_metadata' ->> 'role') = 'admin');
+drop policy if exists "Admins can delete reports" on public.items;
+create policy "Admins can delete reports" on public.items for delete to authenticated
+using ((auth.jwt() -> 'app_metadata' ->> 'role') = 'admin');
 
 create table if not exists public.feedback (
   id uuid primary key default gen_random_uuid(),

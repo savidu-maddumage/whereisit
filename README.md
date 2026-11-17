@@ -8,6 +8,14 @@ This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-
 
 When Supabase is configured, reports, photos, and feedback are stored in the shared project. Without it, the app keeps using browser-local storage. Report contact email addresses and phone numbers are readable to anyone with access to the public reports table, so reporters are warned before publishing. Email and SMS links open a message draft; automatic delivery still needs a mail or SMS provider integration.
 
+## Admin panel
+
+Open `/admin` (for local development, `http://localhost:3000/admin`) for a separate admin sign-in and shared-report manager. The panel supports marking a report found/lost and permanently deleting a report. It requires Supabase; browser-local reports and sample cards are not managed there.
+
+To enable it, create an account in Supabase Dashboard under **Authentication > Users**, then set that user's **app metadata** to `{"role":"admin"}`. Use app metadata, not user metadata, because users must not be able to grant themselves admin access. Sign in at `/admin` with that account. Run the updated `supabase/setup.sql` in the SQL Editor to add the admin-only update and delete policies. The account must sign in again after changing its metadata so its session receives the admin role.
+
+To add the three optional demo reports to the shared admin list, run `supabase/add-sample-items.sql` in the SQL Editor after `setup.sql`. Their contact details are fictional placeholders and cannot reach a real person.
+
 ## Getting Started
 
 First, run the development server:

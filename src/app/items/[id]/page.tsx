@@ -5,6 +5,7 @@ import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { ArrowLeft, MapPin, Phone } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import ThemeToggle from "@/components/theme-toggle";
 
 type Item = { id: string; name: string; category: string; location: string; address?: string; image?: string; date: string; status: "Lost" | "Found"; description: string; ownerName: string; email: string; phone: string; lat?: number; lng?: number };
 type DbItem = { id: string; name: string; category: string; location: string; address: string | null; image_url: string | null; date_label: string; status: "Lost" | "Found"; description: string; owner_name: string; email: string; phone: string; lat: number | null; lng: number | null };
@@ -51,7 +52,7 @@ export default function ItemPage() {
   const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(destination)}`;
 
   return <main className="min-h-screen bg-[#f7f8fc] text-slate-900">
-    <nav className="border-b border-slate-200 bg-white"><div className="mx-auto flex max-w-6xl items-center justify-between px-5 py-4 md:px-8"><Link href="/" className="text-2xl font-black tracking-tight">WhereIsIt<span className="text-indigo-600">.</span></Link><Link href="/browse" className="text-sm font-bold text-indigo-600">Browse items</Link></div></nav>
+    <nav className="border-b border-slate-200 bg-white"><div className="mx-auto flex max-w-6xl items-center justify-between px-5 py-4 md:px-8"><Link href="/" className="text-2xl font-black tracking-tight">WhereIsIt<span className="text-indigo-600">.</span></Link><div className="flex items-center gap-4"><Link href="/browse" className="text-sm font-bold text-indigo-600">Browse items</Link><ThemeToggle/></div></div></nav>
     <div className="mx-auto max-w-6xl px-5 py-8 md:px-8 md:py-12">
       <Link href="/browse" className="mb-6 inline-flex items-center gap-2 text-sm font-bold text-slate-500 hover:text-indigo-600"><ArrowLeft size={16}/> Back to items</Link>
       <div className="grid gap-8 lg:grid-cols-[.8fr_1.2fr]">
